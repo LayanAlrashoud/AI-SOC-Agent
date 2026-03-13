@@ -64,7 +64,7 @@ The AI agent performs several analysis steps similar to a SOC analyst:
 
 ## Authors
 
-**Lyane R.**  
+**Lyane Alrashoud.**  
 **Razan Al-Baqami**
 
 Developed during the **Agentic AI Bootcamp – Tuwaiq Academy**
