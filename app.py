@@ -1,12 +1,14 @@
 import streamlit as st
-import pandas as pd
 from ai_agent import analyze_alert
 from wazuh_client import fetch_alerts, get_available_agents, get_neighbor_alerts
 
 st.set_page_config(page_title="AI SOC Dashboard", layout="wide")
 
-st.title("AI SOC Alert Dashboard")
-st.write("Fetch Wazuh alerts, filter by time and client, then analyze any selected alert with its 5-minute neighboring context.")
+st.title("AI SOC Alert Correlation Dashboard")
+st.write(
+    "Fetch Wazuh alerts, filter by time and client, then analyze any selected alert "
+    "with its 5-minute neighboring context."
+)
 
 # ----------------------------
 # Session state
@@ -45,7 +47,7 @@ with col2:
     agent_filter = st.selectbox("Client / Agent", options=agents)
 
 with col3:
-    fetch_button = st.button("Fetch Alerts")
+    fetch_button = st.button("Fetch Alerts", use_container_width=True)
 
 # ----------------------------
 # Fetch alerts
@@ -66,57 +68,55 @@ if fetch_button:
         st.error(f"Failed to fetch alerts: {e}")
 
 # ----------------------------
-# Show alerts table
+# Show alerts
 # ----------------------------
 st.subheader("Alerts")
 
 if st.session_state.alerts:
-    table_data = []
+    h1, h2, h3, h4, h5, h6 = st.columns([2, 2, 2, 4, 1, 1])
+    h1.markdown("**Timestamp**")
+    h2.markdown("**Client**")
+    h3.markdown("**Source IP**")
+    h4.markdown("**Rule Description**")
+    h5.markdown("**Severity**")
+    h6.markdown("**Action**")
+
+    st.divider()
+
     for i, alert in enumerate(st.session_state.alerts):
-        table_data.append({
-            "index": i,
-            "timestamp": alert.get("timestamp", "unknown"),
-            "agent_name": alert.get("agent_name", "unknown"),
-            "severity": alert.get("severity", 0),
-            "rule_description": alert.get("rule_description", "unknown"),
-            "source_ip": alert.get("source_ip", "unknown"),
-        })
+        c1, c2, c3, c4, c5, c6 = st.columns([2, 2, 2, 4, 1, 1])
 
-    df = pd.DataFrame(table_data)
-    st.dataframe(df, use_container_width=True)
+        with c1:
+            st.write(alert.get("timestamp", "unknown"))
 
-    st.subheader("Select Alert")
+        with c2:
+            st.write(alert.get("agent_name", "unknown"))
 
-    selected_index = st.number_input(
-        "Enter alert index to inspect",
-        min_value=0,
-        max_value=len(st.session_state.alerts) - 1,
-        step=1
-    )
+        with c3:
+            st.write(alert.get("source_ip", "unknown"))
 
-    col_a, col_b = st.columns(2)
+        with c4:
+            st.write(alert.get("rule_description", "unknown"))
 
-    with col_a:
-        if st.button("Load Selected Alert"):
-            st.session_state.selected_alert = st.session_state.alerts[selected_index]
-            st.session_state.analysis_result = None
+        with c5:
+            st.write(alert.get("severity", 0))
 
-            try:
-                st.session_state.neighbor_alerts = get_neighbor_alerts(
-                    st.session_state.selected_alert,
-                    minutes=5,
-                    size=100
-                )
-            except Exception as e:
-                st.session_state.neighbor_alerts = []
-                st.warning(f"Could not load neighbor alerts: {e}")
-
-    with col_b:
-        if st.button("Clear Selected Alert"):
-            st.session_state.selected_alert = None
-            st.session_state.neighbor_alerts = []
-            st.session_state.analysis_result = None
-
+        with c6:
+            if st.button("Analyze", key=f"analyze_{i}"):
+                try:
+                    st.session_state.selected_alert = alert
+                    st.session_state.neighbor_alerts = get_neighbor_alerts(
+                        alert,
+                        minutes=5,
+                        size=100
+                    )
+                    st.session_state.analysis_result = analyze_alert(
+                        alert,
+                        st.session_state.neighbor_alerts
+                    )
+                    st.success("Analysis completed.")
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
 else:
     st.info("No alerts loaded yet. Choose filters, then click 'Fetch Alerts'.")
 
@@ -124,6 +124,7 @@ else:
 # Show selected alert
 # ----------------------------
 if st.session_state.selected_alert:
+    st.divider()
     st.subheader("Selected Alert")
     st.json(st.session_state.selected_alert)
 
@@ -131,32 +132,24 @@ if st.session_state.selected_alert:
     st.write(f"Found {len(st.session_state.neighbor_alerts)} related alerts.")
 
     if st.session_state.neighbor_alerts:
-        neighbor_table = []
-        for i, alert in enumerate(st.session_state.neighbor_alerts):
-            neighbor_table.append({
-                "index": i,
-                "timestamp": alert.get("timestamp", "unknown"),
-                "agent_name": alert.get("agent_name", "unknown"),
-                "severity": alert.get("severity", 0),
-                "rule_description": alert.get("rule_description", "unknown"),
-                "source_ip": alert.get("source_ip", "unknown"),
-            })
+        nh1, nh2, nh3, nh4, nh5 = st.columns([2, 2, 2, 4, 1])
+        nh1.markdown("**Timestamp**")
+        nh2.markdown("**Client**")
+        nh3.markdown("**Source IP**")
+        nh4.markdown("**Rule Description**")
+        nh5.markdown("**Severity**")
 
-        neighbor_df = pd.DataFrame(neighbor_table)
-        st.dataframe(neighbor_df, use_container_width=True)
+        st.divider()
+
+        for neighbor in st.session_state.neighbor_alerts:
+            n1, n2, n3, n4, n5 = st.columns([2, 2, 2, 4, 1])
+            n1.write(neighbor.get("timestamp", "unknown"))
+            n2.write(neighbor.get("agent_name", "unknown"))
+            n3.write(neighbor.get("source_ip", "unknown"))
+            n4.write(neighbor.get("rule_description", "unknown"))
+            n5.write(neighbor.get("severity", 0))
     else:
         st.info("No neighbor alerts found for this alert.")
-
-    if st.button("Analyze Selected Alert with AI"):
-        try:
-            result = analyze_alert(
-                st.session_state.selected_alert,
-                st.session_state.neighbor_alerts
-            )
-            st.session_state.analysis_result = result
-            st.success("Analysis completed.")
-        except Exception as e:
-            st.error(f"Analysis failed: {e}")
 
 # ----------------------------
 # Show AI analysis
@@ -164,28 +157,44 @@ if st.session_state.selected_alert:
 if st.session_state.analysis_result:
     result = st.session_state.analysis_result
 
+    st.divider()
+    st.subheader("AI Incident Analysis")
+
+    sev = result.get("ai_severity", "Unknown")
+    priority = result.get("ai_priority", "Unknown")
+
+    if sev == "Critical":
+        st.error(f"AI Severity: {sev}")
+    elif sev == "High":
+        st.warning(f"AI Severity: {sev}")
+    elif sev == "Medium":
+        st.info(f"AI Severity: {sev}")
+    else:
+        st.success(f"AI Severity: {sev}")
+
+    if priority == "P1":
+        st.error(f"AI Priority: {priority}")
+    elif priority == "P2":
+        st.warning(f"AI Priority: {priority}")
+    elif priority == "P3":
+        st.info(f"AI Priority: {priority}")
+    else:
+        st.success(f"AI Priority: {priority}")
+
     left, right = st.columns(2)
 
     with left:
-        st.subheader("Selected Alert Details")
-        st.json(st.session_state.selected_alert)
+        st.markdown(f"**Incident Type:** {result.get('incident_type', 'unknown')}")
+        st.markdown(f"**Wazuh Severity:** {result.get('wazuh_severity', 'unknown')}")
+        st.markdown(f"**AI Risk Score:** {result.get('ai_risk_score', 'unknown')}/100")
+        st.markdown(f"**False Positive Likelihood:** {result.get('false_positive_likelihood', 'unknown')}")
+        st.markdown(f"**Needs Human Attention:** {result.get('needs_human_attention', 'unknown')}")
 
     with right:
-        st.subheader("AI Analysis (Raw JSON)")
-        st.json(result)
-
-    st.subheader("Incident Summary")
-    st.markdown(f"**Incident Type:** {result.get('incident_type', 'unknown')}")
-    st.markdown(f"**Wazuh Severity:** {result.get('wazuh_severity', 'unknown')}")
-    st.markdown(f"**AI Severity:** {result.get('ai_severity', 'unknown')}")
-    st.markdown(f"**AI Risk Score:** {result.get('ai_risk_score', 'unknown')}/100")
-    st.markdown(f"**AI Priority:** {result.get('ai_priority', 'unknown')}")
-    st.markdown(f"**False Positive Likelihood:** {result.get('false_positive_likelihood', 'unknown')}")
-    st.markdown(f"**Needs Human Attention:** {result.get('needs_human_attention', 'unknown')}")
-    st.markdown(f"**Source IP:** {result.get('source_ip', 'unknown')}")
-    st.markdown(f"**Target Host:** {result.get('target_host', 'unknown')}")
-    st.markdown(f"**Neighbor Alerts Count:** {result.get('neighbor_alerts_count', 'unknown')}")
-    st.markdown(f"**Confidence:** {result.get('confidence', 'unknown')}")
+        st.markdown(f"**Source IP:** {result.get('source_ip', 'unknown')}")
+        st.markdown(f"**Target Host:** {result.get('target_host', 'unknown')}")
+        st.markdown(f"**Neighbor Alerts Count:** {result.get('neighbor_alerts_count', 'unknown')}")
+        st.markdown(f"**Confidence:** {result.get('confidence', 'unknown')}")
 
     st.subheader("Explanation")
     st.write(result.get("explanation", "No explanation returned."))
