@@ -10,11 +10,11 @@ WAZUH_INDEXER_USERNAME = os.getenv("WAZUH_INDEXER_USERNAME")
 WAZUH_INDEXER_PASSWORD = os.getenv("WAZUH_INDEXER_PASSWORD")
 
 
-def get_latest_alert():
+def get_latest_100_alerts():
     url = f"{WAZUH_INDEXER_URL}/wazuh-alerts*/_search"
 
     query = {
-        "size": 1,
+        "size": 100,
         "sort": [
             {"@timestamp": {"order": "desc"}}
         ],
@@ -36,23 +36,25 @@ def get_latest_alert():
     data = response.json()
     hits = data.get("hits", {}).get("hits", [])
 
-    if not hits:
-        return {
-            "rule_description": "No alert found",
-            "source_ip": "unknown",
-            "agent_name": "unknown",
-            "severity": 0,
-            "full_log": "No alerts returned"
+    alerts = []
+
+    for hit in hits:
+        src = hit.get("_source", {})
+
+        alert = {
+            "id": src.get("id", hit.get("_id", "unknown")),
+            "timestamp": src.get("@timestamp", "unknown"),
+            "rule_description": src.get("rule", {}).get("description", "unknown"),
+            "source_ip": src.get("data", {}).get("srcip", "unknown"),
+            "agent_name": src.get("agent", {}).get("name", "unknown"),
+            "severity": src.get("rule", {}).get("level", 0),
+            "full_log": src.get("full_log", "unknown"),
+            "groups": src.get("rule", {}).get("groups", []),
+            "mitre_ids": src.get("rule", {}).get("mitre", {}).get("id", []),
+            "mitre_tactics": src.get("rule", {}).get("mitre", {}).get("tactic", []),
+            "raw_alert": src
         }
 
-    src = hits[0].get("_source", {})
+        alerts.append(alert)
 
-    return {
-        "rule_description": src.get("rule", {}).get("description", "unknown"),
-        "source_ip": src.get("data", {}).get("srcip", "unknown"),
-        "agent_name": src.get("agent", {}).get("name", "unknown"),
-        "severity": src.get("rule", {}).get("level", 0),
-        "full_log": src.get("full_log", "unknown"),
-        "timestamp": src.get("@timestamp", "unknown"),
-        "raw_alert": src
-    }
+    return alerts

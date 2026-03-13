@@ -1,73 +1,125 @@
 import json
 import streamlit as st
 from ai_agent import analyze_alert
-from wazuh_client import get_latest_alert
+from wazuh_client import get_latest_100_alerts
 
 st.set_page_config(page_title="AI SOC Dashboard", layout="wide")
+st.title("AI SOC Alert Triage Dashboard")
+st.write("Fetch the latest 100 Wazuh alerts, filter risky ones, and analyze any alert with AI.")
 
-st.title("AI SOC Analyst Dashboard")
-st.write("Fetch the latest Wazuh alert and analyze it with OpenAI.")
 
-if "alert_text" not in st.session_state:
-    st.session_state.alert_text = ""
+def is_risky(alert):
+    severity = alert.get("severity", 0)
+    desc = str(alert.get("rule_description", "")).lower()
+    groups = [g.lower() for g in alert.get("groups", [])]
+
+    risky_keywords = [
+        "authentication failed",
+        "multiple authentication failures",
+        "brute force",
+        "sudo",
+        "root",
+        "privilege escalation",
+        "sshd",
+        "failed password",
+        "integrity",
+        "malware",
+        "suspicious",
+        "attack",
+        "rootcheck"
+    ]
+
+    if severity >= 7:
+        return True
+
+    if any(keyword in desc for keyword in risky_keywords):
+        return True
+
+    if any(group in ["authentication_failed", "sudo", "sshd", "attack", "rootcheck"] for group in groups):
+        return True
+
+    return False
+
+
+if "alerts" not in st.session_state:
+    st.session_state.alerts = []
+
+if "filtered_alerts" not in st.session_state:
+    st.session_state.filtered_alerts = []
+
+if "selected_alert" not in st.session_state:
+    st.session_state.selected_alert = None
+
 
 col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("Fetch Latest Alert from Wazuh"):
+    if st.button("Fetch Latest 100 Alerts"):
         try:
-            latest_alert = get_latest_alert()
-            st.session_state.alert_text = json.dumps(latest_alert, indent=2)
-            st.success("Latest alert loaded from Wazuh.")
+            alerts = get_latest_100_alerts()
+            st.session_state.alerts = alerts
+            st.session_state.filtered_alerts = [a for a in alerts if is_risky(a)]
+            st.success(f"Loaded {len(alerts)} alerts. Found {len(st.session_state.filtered_alerts)} risky alerts.")
         except Exception as e:
-            st.error(f"Failed to fetch alert from Wazuh: {e}")
+            st.error(f"Failed to fetch alerts: {e}")
 
 with col2:
     if st.button("Clear"):
-        st.session_state.alert_text = ""
+        st.session_state.alerts = []
+        st.session_state.filtered_alerts = []
+        st.session_state.selected_alert = None
 
-alert_text = st.text_area(
-    "Wazuh Alert JSON",
-    value=st.session_state.alert_text,
-    height=320
-)
 
-if st.button("Analyze Alert"):
-    try:
-        alert = json.loads(alert_text)
-        result = analyze_alert(alert)
+st.subheader("Risky Alerts Only")
 
-        st.success("Analysis completed.")
+if st.session_state.filtered_alerts:
+    options = [
+        f"{i+1}. [{a['severity']}] {a['timestamp']} | {a['agent_name']} | {a['rule_description']}"
+        for i, a in enumerate(st.session_state.filtered_alerts)
+    ]
 
-        left, right = st.columns(2)
+    selected_option = st.selectbox("Choose an alert to inspect", options)
 
-        with left:
-            st.subheader("Latest Alert")
-            st.json(alert)
+    selected_index = options.index(selected_option)
+    st.session_state.selected_alert = st.session_state.filtered_alerts[selected_index]
 
-        with right:
-            st.subheader("AI Analysis")
-            st.json(result)
+    st.subheader("Selected Alert")
+    st.json(st.session_state.selected_alert)
 
-        st.subheader("Incident Summary")
-        st.markdown(f"**Incident Type:** {result.get('incident_type', 'unknown')}")
-        st.markdown(f"**Severity:** {result.get('severity', 'unknown')}")
-        st.markdown(f"**Source IP:** {result.get('source_ip', 'unknown')}")
-        st.markdown(f"**Target Host:** {result.get('target_host', 'unknown')}")
-        st.markdown(f"**Confidence:** {result.get('confidence', 'unknown')}")
+    if st.button("Analyze Selected Alert with AI"):
+        try:
+            result = analyze_alert(st.session_state.selected_alert)
 
-        st.subheader("Explanation")
-        st.write(result.get("explanation", "No explanation returned."))
+            left, right = st.columns(2)
 
-        st.subheader("Recommended Actions")
-        actions = result.get("recommended_actions", [])
-        if actions:
-            for action in actions:
-                st.markdown(f"- {action}")
-        else:
-            st.write("No actions returned.")
+            with left:
+                st.subheader("Alert Details")
+                st.json(st.session_state.selected_alert)
 
-    except json.JSONDecodeError:
-        st.error("Invalid JSON.")
-    except Exception as e:
-        st.error(f"Unexpected error: {e}")
+            with right:
+                st.subheader("AI Analysis")
+                st.json(result)
+
+            st.subheader("Incident Summary")
+            st.markdown(f"**Incident Type:** {result.get('incident_type', 'unknown')}")
+            st.markdown(f"**Severity:** {result.get('severity', 'unknown')}")
+            st.markdown(f"**Source IP:** {result.get('source_ip', 'unknown')}")
+            st.markdown(f"**Target Host:** {result.get('target_host', 'unknown')}")
+            st.markdown(f"**Confidence:** {result.get('confidence', 'unknown')}")
+
+            st.subheader("Explanation")
+            st.write(result.get("explanation", "No explanation returned."))
+
+            st.subheader("Recommended Actions")
+            actions = result.get("recommended_actions", [])
+            if actions:
+                for action in actions:
+                    st.markdown(f"- {action}")
+            else:
+                st.write("No actions returned.")
+
+        except Exception as e:
+            st.error(f"Analysis failed: {e}")
+
+else:
+    st.info("No risky alerts loaded yet. Click 'Fetch Latest 100 Alerts'.")
