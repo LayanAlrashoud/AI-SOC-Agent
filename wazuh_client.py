@@ -10,16 +10,35 @@ WAZUH_INDEXER_USERNAME = os.getenv("WAZUH_INDEXER_USERNAME")
 WAZUH_INDEXER_PASSWORD = os.getenv("WAZUH_INDEXER_PASSWORD")
 
 
-def get_latest_100_alerts():
+def fetch_alerts(time_from="now-24h", agent_name=None, size=500):
     url = f"{WAZUH_INDEXER_URL}/wazuh-alerts*/_search"
 
+    filters = [
+        {
+            "range": {
+                "@timestamp": {
+                    "gte": time_from
+                }
+            }
+        }
+    ]
+
+    if agent_name and agent_name != "All": 
+     filters.append({
+        "match_phrase": {
+            "agent.name": agent_name.strip()
+        }
+    })
+
     query = {
-        "size": 100,
+        "size": size,
         "sort": [
             {"@timestamp": {"order": "desc"}}
         ],
         "query": {
-            "match_all": {}
+            "bool": {
+                "filter": filters
+            }
         }
     }
 
@@ -29,7 +48,7 @@ def get_latest_100_alerts():
         headers={"Content-Type": "application/json"},
         json=query,
         verify=False,
-        timeout=20
+        timeout=30
     )
     response.raise_for_status()
 
@@ -41,7 +60,7 @@ def get_latest_100_alerts():
     for hit in hits:
         src = hit.get("_source", {})
 
-        alert = {
+        alerts.append({
             "id": src.get("id", hit.get("_id", "unknown")),
             "timestamp": src.get("@timestamp", "unknown"),
             "rule_description": src.get("rule", {}).get("description", "unknown"),
@@ -53,8 +72,12 @@ def get_latest_100_alerts():
             "mitre_ids": src.get("rule", {}).get("mitre", {}).get("id", []),
             "mitre_tactics": src.get("rule", {}).get("mitre", {}).get("tactic", []),
             "raw_alert": src
-        }
-
-        alerts.append(alert)
+        })
 
     return alerts
+
+
+def get_available_agents(size=200):
+    alerts = fetch_alerts(time_from="now-30d", agent_name=None, size=size)
+    agents = sorted(list({a["agent_name"] for a in alerts if a["agent_name"] != "unknown"}))
+    return ["All"] + agents
