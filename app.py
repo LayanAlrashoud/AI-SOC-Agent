@@ -159,8 +159,8 @@ def render_tool_findings(findings: list):
         )
 
 
-def render_selected_alert(alert: dict):
-    st.subheader("Selected Alert")
+def render_selected_alert(alert: dict, title: str = "Selected Alert"):
+    st.subheader(title)
 
     left, right = st.columns(2)
 
@@ -178,8 +178,8 @@ def render_selected_alert(alert: dict):
         st.json(alert)
 
 
-def render_neighbor_alerts_table(neighbor_alerts: list):
-    st.subheader("Neighbor Alerts")
+def render_neighbor_alerts_table(neighbor_alerts: list, title: str = "Neighbor Alerts"):
+    st.subheader(title)
     st.write(f"Found **{len(neighbor_alerts)}** related alerts.")
 
     if not neighbor_alerts:
@@ -217,9 +217,83 @@ def render_neighbor_alerts_table(neighbor_alerts: list):
                 st.write(neighbor.get("severity", "unknown"))
 
 
+def render_analysis_report(result: dict):
+    st.subheader("AI Incident Analysis")
+
+    render_severity_box(result.get("ai_severity", "Unknown"))
+    render_priority_box(result.get("ai_priority", "Unknown"))
+
+    left, right = st.columns(2)
+
+    with left:
+        render_kv_box("Incident Type", str(result.get("incident_type", "unknown")))
+        render_kv_box("Wazuh Severity", str(result.get("wazuh_severity", "unknown")))
+        render_kv_box("AI Risk Score", f"{result.get('ai_risk_score', 'unknown')}/100")
+        render_kv_box(
+            "False Positive Likelihood",
+            str(result.get("false_positive_likelihood", "unknown"))
+        )
+
+    with right:
+        render_kv_box(
+            "Needs Human Attention",
+            str(result.get("needs_human_attention", "unknown"))
+        )
+        render_kv_box("Source IP", str(result.get("source_ip", "unknown")))
+        render_kv_box("Target Host", str(result.get("target_host", "unknown")))
+        render_kv_box("Neighbor Alerts Count", str(result.get("neighbor_alerts_count", "unknown")))
+        render_kv_box("Confidence", str(result.get("confidence", "unknown")))
+
+    st.subheader("Explanation")
+    st.markdown(
+        f"""
+        <div class="section-box">
+            {result.get("explanation", "No explanation returned.")}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.subheader("Why It Matters")
+    st.markdown(
+        f"""
+        <div class="section-box">
+            {result.get("why_it_matters", "No impact explanation returned.")}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.subheader("Recommended Actions")
+    actions = result.get("recommended_actions", [])
+    if actions:
+        for action in actions:
+            st.markdown(
+                f"""
+                <div class="section-box">• {action}</div>
+                """,
+                unsafe_allow_html=True
+            )
+    else:
+        st.write("No actions returned.")
+
+    st.subheader("Tools Used")
+    tools_used = result.get("tools_used", [])
+    if tools_used:
+        badges_html = "".join(
+            [f'<span class="mini-badge">{tool}</span>' for tool in tools_used]
+        )
+        st.markdown(badges_html, unsafe_allow_html=True)
+    else:
+        st.write("No external tools were used for this alert.")
+
+    st.subheader("Tool Findings")
+    render_tool_findings(result.get("tool_findings", []))
+
+
 st.subheader("Filters")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     time_filter = st.selectbox(
@@ -234,10 +308,14 @@ with col2:
     except Exception:
         agents = ["All"]
 
-    agent_filter = st.selectbox("Client / Agent", options=agents)
+    agent_filter = st.selectbox(
+        "Client / Agent",
+        options=agents
+    )
 
-with col3:
-    fetch_button = st.button("Fetch Alerts", use_container_width=True)
+st.markdown("<br>", unsafe_allow_html=True)
+
+fetch_button = st.button("Fetch Alerts", use_container_width=True)
 
 if fetch_button:
     try:
@@ -322,83 +400,10 @@ if st.session_state.selected_alert:
     render_neighbor_alerts_table(st.session_state.neighbor_alerts)
 
 if st.session_state.analysis_result:
-    result = st.session_state.analysis_result
-
     st.divider()
-    st.subheader("AI Incident Analysis")
+    render_analysis_report(st.session_state.analysis_result)
 
-    render_severity_box(result.get("ai_severity", "Unknown"))
-    render_priority_box(result.get("ai_priority", "Unknown"))
-
-    left, right = st.columns(2)
-
-    with left:
-        render_kv_box("Incident Type", str(result.get("incident_type", "unknown")))
-        render_kv_box("Wazuh Severity", str(result.get("wazuh_severity", "unknown")))
-        render_kv_box("AI Risk Score", f"{result.get('ai_risk_score', 'unknown')}/100")
-        render_kv_box(
-            "False Positive Likelihood",
-            str(result.get("false_positive_likelihood", "unknown"))
-        )
-
-    with right:
-        render_kv_box(
-            "Needs Human Attention",
-            str(result.get("needs_human_attention", "unknown"))
-        )
-        render_kv_box("Source IP", str(result.get("source_ip", "unknown")))
-        render_kv_box("Target Host", str(result.get("target_host", "unknown")))
-        render_kv_box("Neighbor Alerts Count", str(result.get("neighbor_alerts_count", "unknown")))
-        render_kv_box("Confidence", str(result.get("confidence", "unknown")))
-
-    st.subheader("Explanation")
-    st.markdown(
-        f"""
-        <div class="section-box">
-            {result.get("explanation", "No explanation returned.")}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.subheader("Why It Matters")
-    st.markdown(
-        f"""
-        <div class="section-box">
-            {result.get("why_it_matters", "No impact explanation returned.")}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.subheader("Recommended Actions")
-    actions = result.get("recommended_actions", [])
-    if actions:
-        for action in actions:
-            st.markdown(
-                f"""
-                <div class="section-box">• {action}</div>
-                """,
-                unsafe_allow_html=True
-            )
-    else:
-        st.write("No actions returned.")
-
-    st.subheader("Tools Used")
-    tools_used = result.get("tools_used", [])
-    if tools_used:
-        badges_html = "".join(
-            [f'<span class="mini-badge">{tool}</span>' for tool in tools_used]
-        )
-        st.markdown(badges_html, unsafe_allow_html=True)
-    else:
-        st.write("No external tools were used for this alert.")
-
-    st.subheader("Tool Findings")
-    render_tool_findings(result.get("tool_findings", []))
-
-
-    # ----------------------------
+# ----------------------------
 # Threat Intelligence Demo
 # ----------------------------
 
@@ -418,11 +423,9 @@ demo_ip = st.text_input(
 run_demo = st.button("Run Threat Intelligence Demo")
 
 if run_demo:
-
     if not demo_ip:
         st.warning("Please enter an IP address.")
     else:
-
         demo_alert = {
             "timestamp": "2026-03-11T00:00:00Z",
             "agent_name": "demo-host",
@@ -432,57 +435,41 @@ if run_demo:
         }
 
         demo_neighbors = [
-    {
-        "timestamp": "2026-03-11T00:00:01Z",
-        "agent_name": "demo-host",
-        "source_ip": demo_ip,
-        "severity": 8,
-        "rule_description": "SSH authentication failed"
-    },
-    {
-        "timestamp": "2026-03-11T00:00:03Z",
-        "agent_name": "demo-host",
-        "source_ip": demo_ip,
-        "severity": 8,
-        "rule_description": "SSH authentication failed"
-    }
-]
+            {
+                "timestamp": "2026-03-11T00:00:01Z",
+                "agent_name": "demo-host",
+                "source_ip": demo_ip,
+                "severity": 8,
+                "rule_description": "SSH authentication failed"
+            },
+            {
+                "timestamp": "2026-03-11T00:00:03Z",
+                "agent_name": "demo-host",
+                "source_ip": demo_ip,
+                "severity": 8,
+                "rule_description": "SSH authentication failed"
+            }
+        ]
 
-        with st.spinner("AI agent analyzing the IP and calling threat intelligence tools..."):
-
-            result = analyze_alert(
-                demo_alert,
-                demo_neighbors
-            )
-
-        st.subheader("AI Analysis Result")
-
-        st.json(result)
-
-        st.subheader("Tools Used")
-
-        tools = result.get("tools_used", [])
-
-        if tools:
-            for t in tools:
-                st.success(t)
-        else:
-            st.info("No external tools were used.")
-
-        st.subheader("Tool Findings")
-
-        findings = result.get("tool_findings", [])
-
-        if findings:
-            for f in findings:
-                st.markdown(
-                    f"""
-                    **Tool:** {f.get("tool")}
-
-                    **Observable:** {f.get("observable")}
-
-                    **Finding:** {f.get("summary")}
-                    """
+        try:
+            with st.spinner("AI agent analyzing the IP and calling threat intelligence tools..."):
+                result = analyze_alert(
+                    demo_alert,
+                    demo_neighbors,
+                    force_tools=True
                 )
-        else:
-            st.info("No findings returned.")
+
+            st.divider()
+            render_selected_alert(demo_alert, title="Demo Alert")
+            st.divider()
+            render_neighbor_alerts_table(demo_neighbors, title="Demo Neighbor Alerts")
+            st.divider()
+            render_analysis_report(result)
+
+        except TypeError:
+            st.error(
+                "Your ai_agent.py does not yet support force_tools=True. "
+                "Update analyze_alert() to accept force_tools before using this demo mode."
+            )
+        except Exception as e:
+            st.error(f"Demo analysis failed: {e}")
