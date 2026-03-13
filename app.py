@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 from ai_agent import analyze_alert
-from wazuh_client import fetch_alerts, get_available_agents
+from wazuh_client import fetch_alerts, get_available_agents, get_neighbor_alerts
 
 st.set_page_config(page_title="AI SOC Dashboard", layout="wide")
 
 st.title("AI SOC Alert Dashboard")
-st.write("Fetch Wazuh alerts, filter by time and client, then analyze any selected alert with AI.")
+st.write("Fetch Wazuh alerts, filter by time and client, then analyze any selected alert with its 5-minute neighboring context.")
 
 # ----------------------------
 # Session state
@@ -16,6 +16,9 @@ if "alerts" not in st.session_state:
 
 if "selected_alert" not in st.session_state:
     st.session_state.selected_alert = None
+
+if "neighbor_alerts" not in st.session_state:
+    st.session_state.neighbor_alerts = []
 
 if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
@@ -56,6 +59,7 @@ if fetch_button:
         )
         st.session_state.alerts = alerts
         st.session_state.selected_alert = None
+        st.session_state.neighbor_alerts = []
         st.session_state.analysis_result = None
         st.success(f"Loaded {len(alerts)} alerts.")
     except Exception as e:
@@ -97,9 +101,20 @@ if st.session_state.alerts:
             st.session_state.selected_alert = st.session_state.alerts[selected_index]
             st.session_state.analysis_result = None
 
+            try:
+                st.session_state.neighbor_alerts = get_neighbor_alerts(
+                    st.session_state.selected_alert,
+                    minutes=5,
+                    size=100
+                )
+            except Exception as e:
+                st.session_state.neighbor_alerts = []
+                st.warning(f"Could not load neighbor alerts: {e}")
+
     with col_b:
         if st.button("Clear Selected Alert"):
             st.session_state.selected_alert = None
+            st.session_state.neighbor_alerts = []
             st.session_state.analysis_result = None
 
 else:
@@ -112,9 +127,32 @@ if st.session_state.selected_alert:
     st.subheader("Selected Alert")
     st.json(st.session_state.selected_alert)
 
+    st.subheader("Neighbor Alerts (same client + same IP within 5 minutes)")
+    st.write(f"Found {len(st.session_state.neighbor_alerts)} related alerts.")
+
+    if st.session_state.neighbor_alerts:
+        neighbor_table = []
+        for i, alert in enumerate(st.session_state.neighbor_alerts):
+            neighbor_table.append({
+                "index": i,
+                "timestamp": alert.get("timestamp", "unknown"),
+                "agent_name": alert.get("agent_name", "unknown"),
+                "severity": alert.get("severity", 0),
+                "rule_description": alert.get("rule_description", "unknown"),
+                "source_ip": alert.get("source_ip", "unknown"),
+            })
+
+        neighbor_df = pd.DataFrame(neighbor_table)
+        st.dataframe(neighbor_df, use_container_width=True)
+    else:
+        st.info("No neighbor alerts found for this alert.")
+
     if st.button("Analyze Selected Alert with AI"):
         try:
-            result = analyze_alert(st.session_state.selected_alert)
+            result = analyze_alert(
+                st.session_state.selected_alert,
+                st.session_state.neighbor_alerts
+            )
             st.session_state.analysis_result = result
             st.success("Analysis completed.")
         except Exception as e:
@@ -129,7 +167,7 @@ if st.session_state.analysis_result:
     left, right = st.columns(2)
 
     with left:
-        st.subheader("Alert Details")
+        st.subheader("Selected Alert Details")
         st.json(st.session_state.selected_alert)
 
     with right:
@@ -146,6 +184,7 @@ if st.session_state.analysis_result:
     st.markdown(f"**Needs Human Attention:** {result.get('needs_human_attention', 'unknown')}")
     st.markdown(f"**Source IP:** {result.get('source_ip', 'unknown')}")
     st.markdown(f"**Target Host:** {result.get('target_host', 'unknown')}")
+    st.markdown(f"**Neighbor Alerts Count:** {result.get('neighbor_alerts_count', 'unknown')}")
     st.markdown(f"**Confidence:** {result.get('confidence', 'unknown')}")
 
     st.subheader("Explanation")
